@@ -1,0 +1,6 @@
+model.pkl
+mlruns/
+__pycache__/
+mlflow_metrics.json
+confusion_matrix.png
+data/
