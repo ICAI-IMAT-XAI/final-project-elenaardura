@@ -1,18 +1,18 @@
 services:
-  practica-final-api:
-    image: elenaardura/practica-final-api
-    container_name: practica-final-api
+  practica-final-xai-api:
+    image: elenaardura/practica-final-xai-api
+    container_name: practica-final-xai-api
     ports:
     - "5000:5000"
     restart: always
 
-  practica-final-web:
-    image: elenaardura/practica-final-web
-    container_name: practica-final-web
+  practica-final-xai-web:
+    image: elenaardura/practica-final-xai-web
+    container_name: practica-final-xai-web
     ports:
       - "8501:8501"
     environment:
-      - API_URL=http://practica-final-api:5000/predict
+      - API_URL=http://practica-final-xai-api:5000/predict
     depends_on:
-      - practica-final-api
+      - practica-final-xai-api
     restart: always
