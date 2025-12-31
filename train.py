@@ -32,6 +32,12 @@ def train_model(n_estimators: int):
 
     X = df.drop(columns=["target"])
     y = df["target"]
+    
+    # Análisis del dataset: balanceo de clases
+    class_counts = y.value_counts()
+    print("Distribución de clases en el dataset:")
+    for class_label, count in class_counts.items():
+        print(f"  Clase {class_label}: {count} muestras") 
 
     # 2) Split
     X_train, X_test, y_train, y_test = train_test_split(
@@ -45,7 +51,14 @@ def train_model(n_estimators: int):
     # 4) Evaluación
     y_pred = model.predict(X_test)
     acc = accuracy_score(y_test, y_pred)
+    
+    # Comprobar que no hay overfitting
+    y_train_pred = model.predict(X_train)
+    train_acc = accuracy_score(y_train, y_train_pred)
+    
+    print(f"Accuracy train: {train_acc:.4f}")
     print(f"Accuracy test: {acc:.4f}")
+    print(f"Diferencia train-test: {train_acc - acc:.4f}")
 
     # 5) Guardar modelo
     joblib.dump(model, MODEL_PATH)
@@ -64,6 +77,6 @@ def train_model(n_estimators: int):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--n_estimators", type=int, default=100)
+    parser.add_argument("--n_estimators", type=int, default=200)
     args = parser.parse_args()
     train_model(args.n_estimators)
