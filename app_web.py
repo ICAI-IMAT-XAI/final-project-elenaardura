@@ -17,34 +17,24 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import StratifiedKFold
 
 
-# =========================
-# Config
-# =========================
 API_URL = os.environ.get("API_URL", "http://localhost:5000/predict")
 
 FEATURE_NAMES = ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)"]
 FEATURE_LABELS = ["Longitud del sépalo (cm)", "Ancho del sépalo (cm)", "Longitud del pétalo (cm)", "Ancho del pétalo (cm)"]
 CLASS_NAMES = ["Setosa", "Versicolor", "Virginica"]  # 0,1,2
 
-
-# =========================
-# Page
-# =========================
 st.set_page_config(page_title="Iris – Predicción + XAI", layout="wide")
 st.title("API de Predicción del Modelo Iris + Explainability")
 st.write("Introduce las características de la flor para obtener una predicción")
 
-
-# =========================
-# Load local model/data for XAI (in web container)
-# =========================
+# Carga del modelo y de datos
 @st.cache_resource
 def load_model_local():
     return joblib.load("model.pkl")
 
 @st.cache_data
 def load_iris_data():
-    # Debe existir dentro del contenedor web
+    # Tiene que estar dentro del contenedor
     df = pd.read_csv("data/iris_dataset.csv")
     X = df[FEATURE_NAMES].copy()
     y = df["target"].copy()
@@ -53,7 +43,7 @@ def load_iris_data():
 model_local = load_model_local()
 X_bg, y_bg = load_iris_data()
 
-# SHAP explainer: rápido para RandomForest / árboles
+# SHAP explainer
 @st.cache_resource
 def make_shap_explainer(_model):
     return shap.TreeExplainer(_model)
@@ -101,7 +91,6 @@ def compute_local_explanations(x_tuple, pred_class: int):
 
     return shap_vec, lime_html
 
-
 @st.cache_data
 def feature_ablation_cv(
     X: pd.DataFrame,
@@ -110,18 +99,10 @@ def feature_ablation_cv(
     n_estimators: int = 200,
     n_splits: int = 5,
 ):
-    """
-    Sanity check global robusto:
-    - Usa CV estratificado
-    - Devuelve media ± std de accuracy
-    - Evalúa:
-        (none) baseline
-        quitar 1 feature
-        quitar 2 features (petal length + petal width) para ver efecto claro
-    """
     skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
 
     feature_sets = []
+    
     # Baseline
     feature_sets.append((" (none)", list(X.columns)))
 
@@ -130,7 +111,7 @@ def feature_ablation_cv(
         cols = [c for c in X.columns if c != f]
         feature_sets.append((f, cols))
 
-    # Quitando las dos del pétalo (muy accionable)
+    # Quitando las dos del pétalo
     if "petal length (cm)" in X.columns and "petal width (cm)" in X.columns:
         cols = [c for c in X.columns if c not in ["petal length (cm)", "petal width (cm)"]]
         feature_sets.append(("petal length + petal width", cols))
@@ -159,30 +140,22 @@ def feature_ablation_cv(
     base = df.loc[df["features_removed"].str.strip() == "(none)", "cv_accuracy_mean"].values[0]
     df["delta_vs_base"] = df["cv_accuracy_mean"] - base
 
-    # Ordena por caída (más negativa primero)
+    # Ordena por caida de la accuracy
     df = df.sort_values("delta_vs_base")
     return df
 
 @st.cache_data
 def sanity_check_local_perturbation_shap(
     x_tuple,
-    _model,                 # underscore para evitar hashing
-    _shap_explainer,         # underscore para evitar hashing
+    _model,                
+    _shap_explainer,         
     X_ref: pd.DataFrame,
     pred_class: int,
     top_k: int = 2,
-    mode: str = "median",  # "median" o "mean"
+    mode: str = "median", 
     q_low: float = 0.10, 
     q_high: float = 0.90
 ):
-    """
-    Sanity check local basado en SHAP.
-    - Selecciona top_k variables por |SHAP|
-    - Perturba hacia:
-        mode="median": mediana del dataset (cambio suave)
-        mode="aggressive": percentil q_low o q_high en dirección contraria al SHAP (cambio fuerte)
-    - Mide cambio en probabilidad de la clase predicha
-    """
     
     x = np.array(x_tuple, dtype=float)
     x_df = pd.DataFrame([x], columns=FEATURE_NAMES)
@@ -242,31 +215,22 @@ def sanity_check_local_perturbation_shap(
     df["abs_delta_p"] = df["delta_p"].abs()
     return df
 
-
-# =========================
-# GLOBAL explanations (cached)
-# =========================
+# GLOBAL explanations 
 @st.cache_data
 def compute_global_explanations(_X: pd.DataFrame, _y: pd.Series, seed: int = 42, n_shap: int = 120, n_repeats: int = 20):
-    """
-    Calcula (una sola vez y cachea):
-      - 3 SHAP summary plots (uno por clase) a partir de un muestreo
-      - Permutation importance global del modelo
-    """
-    # 1) Muestreo para SHAP summary (para que sea rápido)
+    # 1) SHAP global
     n = min(n_shap, len(_X))
     X_sample = _X.sample(n=n, random_state=seed)
 
     sv = shap_explainer.shap_values(X_sample)
 
-    # Normalizamos formato de salida
     if isinstance(sv, list):
         shap_values_per_class = sv  # [class0, class1, class2]
     else:
         # array (n_samples, n_features, n_classes)
         shap_values_per_class = [sv[:, :, k] for k in range(sv.shape[2])]
 
-    # 2) Permutation importance global (sobre un split fijo reproducible)
+    # 2) Permutation importance global
     X_train, X_test, y_train, y_test = train_test_split(
         _X, _y, test_size=0.3, random_state=seed, stratify=_y
     )
@@ -282,15 +246,13 @@ def compute_global_explanations(_X: pd.DataFrame, _y: pd.Series, seed: int = 42,
 
     return X_sample, shap_values_per_class, perm.importances_mean, perm.importances_std
 
-# =========================
-# Session state init
-# =========================
+# para evitar recomputar global explanations cada vez
 if "global_ready" not in st.session_state:
     st.session_state["global_ready"] = False
     
 if not st.session_state["global_ready"]:
     with st.spinner("Inicializando explicaciones globales (una sola vez)..."):
-        n_shap = min(120, len(X_bg))   # muestreo estable
+        n_shap = len(X_bg)   
         n_repeats = 20
 
         X_sample, shap_values_per_class, perm_mean, perm_std = compute_global_explanations(
@@ -311,9 +273,6 @@ if "x_last" not in st.session_state:
 if "x_df_last" not in st.session_state:
     st.session_state["x_df_last"] = None
 
-# =========================
-# UI – Inputs + Prediction
-# =========================
 col_left, col_right = st.columns([1, 1], gap="large")
 
 with col_left:
@@ -362,7 +321,7 @@ with col_right:
             if confidence is not None:
                 st.write(f"Confianza: **{float(confidence):.3f}**")
 
-            # Guardamos clase objetivo + congelamos el input usado
+            # Guardamos clase objetivo + congelamos el input usado para explicaciones locales
             st.session_state["pred_class"] = pred
             st.session_state["x_last"] = x
             st.session_state["x_last_tuple"] = tuple(x.tolist())
@@ -380,10 +339,6 @@ pred_class = st.session_state.get("pred_class", None)
 
 tabs = st.tabs(["Local (esta flor)", "Global (dataset)"])
 
-
-# =========================
-# LOCAL explanations
-# =========================
 with tabs[0]:
     if pred_class is None:
         st.info("Primero realiza una predicción para ver las explicaciones locales.")
@@ -400,22 +355,6 @@ with tabs[0]:
         
         with c1:
             st.markdown("### SHAP local")
-            # with st.spinner("Calculando SHAP local..."):
-            #     sv = shap_explainer.shap_values(x_df)
-
-            # Normalizamos a vector de la clase objetivo
-            # if isinstance(sv, list):
-            #     shap_vec = np.array(sv[pred_class]).reshape(-1)
-            # else:
-            #     shap_vec = np.array(sv[0, :, pred_class]).reshape(-1)
-
-            # fig, ax = plt.subplots()
-            # order = np.argsort(np.abs(shap_vec))[::-1]
-            # ax.barh([FEATURE_LABELS[i] for i in order], shap_vec[order])
-            # ax.invert_yaxis()
-            # ax.set_title(f"Contribuciones SHAP hacia: {CLASS_NAMES[pred_class]}")
-            # ax.set_xlabel("Impacto en el score del modelo")
-            # st.pyplot(fig, clear_figure=True)
 
             fig, ax = plt.subplots(figsize=(6, 3.6))
 
@@ -431,7 +370,7 @@ with tabs[0]:
             # Línea central en 0
             ax.axvline(0, color="gray", linewidth=1)
 
-            # Limites simétricos alrededor de 0 (centrado visual)
+            # Limites simétricos alrededor de 0
             m = float(np.max(np.abs(vals))) if np.max(np.abs(vals)) > 0 else 1.0
             ax.set_xlim(-1.15*m, 1.15*m)
 
@@ -444,14 +383,6 @@ with tabs[0]:
 
         with c2:
             st.markdown("### LIME local")
-            # with st.spinner("Calculando LIME..."):
-            #     exp = lime_explainer.explain_instance(
-            #         data_row=x,
-            #         predict_fn=lambda z: model_local.predict_proba(pd.DataFrame(z, columns=FEATURE_NAMES)),
-            #         num_features=4,
-            #         top_labels=3,
-            #     )
-
             components.html(lime_html, height=520, scrolling=True)
             st.caption("LIME ajusta un modelo interpretable local (aprox. lineal) alrededor de este punto.")
 
@@ -471,7 +402,7 @@ with tabs[0]:
                 mode="median"
             )
 
-        with st.spinner("Ejecutando sanity check (agresivo)..."):
+        with st.spinner("Ejecutando sanity check (quantiles)..."):
             df_aggr = sanity_check_local_perturbation_shap(
                 st.session_state["x_last_tuple"],
                 model_local,
@@ -496,9 +427,7 @@ with tabs[0]:
             st.dataframe(df_aggr)
             st.caption("Aquí forzamos el cambio en dirección contraria a SHAP; debería afectar más a la probabilidad.")
 
-# =========================
-# GLOBAL explanations
-# =========================
+
 with tabs[1]:
     
     st.markdown("### Global explanations")
@@ -506,7 +435,7 @@ with tabs[1]:
     
     if not st.session_state["global_ready"]:
         with st.spinner("Calculando explicaciones globales ..."):
-            n_shap =len(X_bg)   # muestreo estable y rápido
+            n_shap =len(X_bg)
             n_repeats = 20
 
             X_sample, shap_values_per_class, perm_mean, perm_std = compute_global_explanations(
@@ -521,7 +450,7 @@ with tabs[1]:
         
         st.stop()
     
-    # Render desde session_state (rápido y estable)
+    # Render desde session_state para evitar recomputar y que no se quede pillado
     X_sample = st.session_state["X_sample"]
     shap_values_per_class = st.session_state["shap_values_per_class"]
     perm_mean = st.session_state["perm_mean"]

@@ -20,6 +20,7 @@ El sistema se ejecuta **en local** utilizando **Docker**, combinando una API de 
 - docker-compose.yml: Orquestación de servicios
 - requirements.txt
 - README.md
+- PracticaFinal_Elena_Ardura.pdf: Informe del proyecto
 
 
 ## Paso previo obligatorio: entrenamiento del modelo
