@@ -30,7 +30,6 @@ Antes de ejecutar el proyecto con Docker, es **imprescindible entrenar el modelo
 El entrenamiento **no se realiza automáticamente** al levantar los contenedores, por lo que debe ejecutarse previamente:
 
 ```bash
-pip install -r requirements.txt
 python train.py
 ```
 
